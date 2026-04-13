@@ -9,12 +9,12 @@ description: |
 
 # Session Share Skill
 
-Submit the current Claude Code session to the Session Eval platform for evaluation.
+Submit the current Claude Code session to the Session Share platform for sharing and evaluation.
 
 ## Trigger Conditions
 
-- User says "submit session", "share session", "upload session"
-- User says "help me evaluate this conversation"
+- User says "submit session", "share session", "upload session", "提交会话", "分享会话"
+- User says "help me evaluate this conversation", "评估一下这个对话"
 - User wants to score the current conversation
 - User mentions phrases like "evaluate this", "review this session", "share this chat"
 
@@ -22,78 +22,118 @@ Submit the current Claude Code session to the Session Eval platform for evaluati
 
 ### 1. Detect Current Session
 
-Read `~/.claude/projects/<encoded-cwd>/` directory to find:
-- The most recently modified `.jsonl` file (current active session)
-- Or locate by user-specified session ID
+Claude Code stores session data in `~/.claude/projects/<encoded-cwd>/` where `<encoded-cwd>` is the path with `/` replaced by `-` and other special characters URL-encoded.
 
-The encoded-cwd is the base64-encoded URL-safe version of the current working directory path.
+Within that directory:
+- The most recently modified `.jsonl` file is the current active session
+- Subagent sessions are in `subagents/<agent-name>/` subdirectories
+
+**Important:** On Windows, paths use `-` as separator instead of `/`. For example:
+- Linux: `~/.claude/projects/home-user-project-myapp/`
+- Windows: `~/.claude/projects/C-users-name-project-myapp/`
+
+The simplest way to find the session file is to list all `*.jsonl` files in `~/.claude/projects/` recursively and pick the most recently modified one that matches the current working directory.
 
 ### 2. Read Session Data
 
 - Read the complete JSONL file content
-- Parse to identify subagent sessions (in `subagents/` subdirectory)
-- Calculate metadata (message count, tool calls, duration, models used)
+- Each line is a JSON object with fields: type, uuid, parentUuid, message, timestamp, etc.
+- The content can be large (1MB+); use base64 encoding for submission
 
 ### 3. Submit to Platform
 
-POST to `/api/sessions` with:
+POST to the Session Share API:
+
+```
+POST {API_URL}/sessions
+Content-Type: application/json
+x-session-eval-key: {API_KEY}  (optional, for member uploads)
+```
+
+Request body:
 
 ```json
 {
   "rawJsonl": "<complete jsonl content>",
   "title": "Optional title",
-  "description": "Optional description"
+  "description": "Optional description",
+  "isPublic": true,
+  "encoding": "utf-8"
 }
 ```
 
-The API will:
-1. Parse the JSONL content
-2. Generate a unique share token
-3. Create the session record
-4. Trigger an async evaluation (MODEL_FEEDBACK type)
+For large sessions (>500KB), use base64 encoding:
+
+```json
+{
+  "rawJsonl": "<base64-encoded content>",
+  "encoding": "base64"
+}
+```
+
+**API Response (201 Created):**
+
+```json
+{
+  "shareToken": "abc123def456",
+  "shareUrl": "https://eval.569169.xyz/s/abc123def456",
+  "storageTier": "GUEST",
+  "expiresAt": "2026-04-20T12:00:00Z",
+  "evaluationAllowed": true
+}
+```
 
 ### 4. Return Results
 
 Display to the user:
-- Share link: `https://your-domain.com/s/{shareToken}`
-- Inform user evaluation is running in background (expected ~30 seconds)
-- If subagents exist, show related links
+- **Share link**: The `shareUrl` from the API response
+- **Storage tier**: GUEST (7-day expiry) or MEMBER (180-day expiry with API key)
+- **Evaluation**: Running in background (~30 seconds), refresh the share page to see results
 
 ## API Configuration
 
-The skill uses these environment variables:
-
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SESSION_EVAL_API_URL` | Base URL for API | `http://localhost:3000/api` |
-| `SESSION_EVAL_API_KEY` | Optional API key for authentication | (none) |
+| `SESSION_SHARE_API_URL` | Base URL for API | `https://eval.569169.xyz/api` |
+| `SESSION_SHARE_API_KEY` | API key for member uploads (longer retention, evaluations) | (none) |
 
-## Example Interaction
+Legacy variables (still supported):
+- `SESSION_EVAL_API_URL` — maps to `SESSION_SHARE_API_URL`
+- `SESSION_EVAL_API_KEY` — maps to `SESSION_SHARE_API_KEY`
 
-**User:** Help me submit this session
+## Submission Methods
 
-**Claude:**
+### Method A: Node.js Script (Recommended, Cross-Platform)
+
+```bash
+node .claude/skills/session-share/scripts/submit.mjs
 ```
-Submitting current session...
-[Reading ~/.claude/projects/...]
-[POST to /api/sessions]
 
-Session submitted successfully!
+Options:
+```bash
+node .claude/skills/session-share/scripts/submit.mjs --title "My Session" --description "Description"
+node .claude/skills/session-share/scripts/submit.mjs --private
+```
 
-Share link: https://session-eval.com/s/abc123
+### Method B: Claude Reads and POSTs Directly
 
-Evaluation is running in the background. Please refresh the page in ~30 seconds to see the scoring results.
+Use Bash tool to run a Node.js one-liner that reads the JSONL and POSTs to the API. See `scripts/submit.mjs` for the implementation pattern.
 
-Related subagent sessions:
-- researcher: https://session-eval.com/s/def456
+### Method C: Bash Script (Linux/Mac only)
+
+```bash
+bash .claude/skills/session-share/scripts/submit.sh
 ```
 
 ## Error Handling
 
-1. **No session found**: Prompt user to ensure they have an active Claude Code session
-2. **API unreachable**: Suggest checking if the server is running and SESSION_EVAL_API_URL is correct
-3. **Authentication failed**: Remind user to set SESSION_EVAL_API_KEY if required
-4. **Parse error**: Report the malformed JSONL line and suggest manual review
+| Error | Cause | Solution |
+|-------|-------|----------|
+| No session found | No JSONL file in expected directory | Ensure Claude Code is running and has an active session |
+| API unreachable | Server down or wrong URL | Check `SESSION_SHARE_API_URL` and network connectivity |
+| 401 Unauthorized | Invalid or missing API key | Set `SESSION_SHARE_API_KEY` environment variable |
+| 400 Validation failed | Malformed JSONL content | Check that the JSONL file is valid |
+| 500 Server error | Platform issue | Retry later or check server logs |
 
 ## Technical Notes
 
@@ -101,3 +141,4 @@ Related subagent sessions:
 - Each line is a JSON object with fields: type, uuid, parentUuid, message, timestamp, etc.
 - Subagent sessions are stored in `~/.claude/projects/<encoded-cwd>/subagents/<agent-name>/`
 - The evaluation uses LLM-as-a-Judge pattern with configurable providers
+- Member uploads (with API key) get 180-day retention vs 7-day for guest uploads
