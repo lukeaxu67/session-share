@@ -11,7 +11,8 @@
 //   SESSION_EVAL_API_KEY  - Legacy, maps to SESSION_SHARE_API_KEY
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, resolve, homedir } from 'node:path';
+import { join, resolve } from 'node:path';
+import { homedir } from 'node:os';
 import { createHash } from 'node:crypto';
 
 // Parse arguments
