@@ -2,14 +2,17 @@
 name: session-share
 description: |
   Use when the user wants to submit, share, or upload a Claude Code session
-  for evaluation and analysis. Triggers on phrases like "submit session",
-  "share this conversation", "upload session", "evaluate this session",
-  or when user mentions scoring/reviewing their current conversation.
+  for evaluation and analysis. Supports both auto-detecting the current session
+  and uploading a specific JSONL file path provided by the user. Triggers on
+  phrases like "submit session", "share this conversation", "upload session",
+  "evaluate this session", or when user mentions scoring/reviewing their
+  current conversation. Also triggers when the user provides a specific .jsonl
+  file path to upload.
 ---
 
 # Session Share Skill
 
-Submit the current Claude Code session to the Session Share platform for sharing and evaluation.
+Submit a Claude Code session to the Session Share platform for sharing and evaluation.
 
 ## Trigger Conditions
 
@@ -17,78 +20,66 @@ Submit the current Claude Code session to the Session Share platform for sharing
 - User says "help me evaluate this conversation", "评估一下这个对话"
 - User wants to score the current conversation
 - User mentions phrases like "evaluate this", "review this session", "share this chat"
+- User provides a file path ending in `.jsonl` along with upload intent
+- User says "upload this session file", "提交这个会话文件", "上传这个文件"
 
-## Workflow
+## Modes
 
-### 1. Detect Current Session
+### Auto-Detect Mode (default)
 
-Claude Code stores session data in `~/.claude/projects/<encoded-cwd>/` where `<encoded-cwd>` is the path with `/` replaced by `-` and other special characters URL-encoded.
+When the user does NOT provide a specific file path:
 
-Within that directory:
-- The most recently modified `.jsonl` file is the current active session
-- Subagent sessions are in `subagents/<agent-name>/` subdirectories
+1. Find the current session's JSONL file in `~/.claude/projects/<encoded-cwd>/`
+2. The most recently modified `.jsonl` file is the current active session
+3. Upload using the Node.js script without `--file`
 
-**Important:** On Windows, paths use `-` as separator instead of `/`. For example:
-- Linux: `~/.claude/projects/home-user-project-myapp/`
-- Windows: `~/.claude/projects/C-users-name-project-myapp/`
+### Direct Path Mode
 
-The simplest way to find the session file is to list all `*.jsonl` files in `~/.claude/projects/` recursively and pick the most recently modified one that matches the current working directory.
+**When the user provides an explicit file path, use Direct Path Mode. Do NOT attempt auto-discovery.**
 
-### 2. Read Session Data
+1. Extract the file path from the user's message
+2. Pass the path via `--file` argument to the script
+3. The script validates the file exists and is `.jsonl`
 
-- Read the complete JSONL file content
-- Each line is a JSON object with fields: type, uuid, parentUuid, message, timestamp, etc.
-- The content can be large (1MB+); use base64 encoding for submission
+Examples of user messages that should trigger Direct Path Mode:
+- "上传这个文件 C:/Users/name/sessions/abc.jsonl"
+- "提交 /path/to/session.jsonl"
+- "上传这个会话文件" (when a file path is in context)
 
-### 3. Submit to Platform
+## Submission Methods
 
-POST to the Session Share API:
+### Method A: Node.js Script (Recommended, Cross-Platform)
 
-```
-POST {API_URL}/sessions
-Content-Type: application/json
-x-session-eval-key: {API_KEY}  (optional, for member uploads)
-```
+```bash
+# Auto-detect current session
+node .claude/skills/session-share/scripts/submit.mjs --title "My Session"
 
-Request body:
-
-```json
-{
-  "rawJsonl": "<complete jsonl content>",
-  "title": "Optional title",
-  "description": "Optional description",
-  "isPublic": true,
-  "encoding": "utf-8"
-}
+# Direct file path
+node .claude/skills/session-share/scripts/submit.mjs --file /path/to/session.jsonl --title "My Session"
 ```
 
-For large sessions (>500KB), use base64 encoding:
-
-```json
-{
-  "rawJsonl": "<base64-encoded content>",
-  "encoding": "base64"
-}
+Options:
+```bash
+--file, -f <path>    Specify JSONL file path (skips auto-detection)
+--title "Title"      Optional title for the session
+--description "Desc" Optional description
+--private            Makes the session private (member-only access)
+--key API_KEY        Override API key for member uploads
 ```
 
-**API Response (201 Created):**
+### Method B: Bash Script (Linux/Mac only)
 
-```json
-{
-  "shareToken": "abc123def456",
-  "shareUrl": "https://eval.569169.xyz/s/abc123def456",
-  "storageTier": "GUEST",
-  "expiresAt": "2026-04-20T12:00:00Z",
-  "evaluationAllowed": true
-}
+```bash
+# Auto-detect
+bash .claude/skills/session-share/scripts/submit.sh --title "My Session"
+
+# Direct file path
+bash .claude/skills/session-share/scripts/submit.sh --file /path/to/session.jsonl
 ```
 
-### 4. Return Results
+### Method C: Claude Reads and POSTs Directly
 
-Display to the user:
-- **Share link**: The `shareUrl` from the API response
-- **Storage tier**: GUEST (7-day expiry) or MEMBER (180-day expiry with API key)
-- **Evaluation**: Running in background (~30 seconds), refresh the share page to see results
+Use Bash tool to run a Node.js one-liner that reads the JSONL and POSTs to the API.
 
 ## API Configuration
 
@@ -101,44 +92,36 @@ Legacy variables (still supported):
 - `SESSION_EVAL_API_URL` — maps to `SESSION_SHARE_API_URL`
 - `SESSION_EVAL_API_KEY` — maps to `SESSION_SHARE_API_KEY`
 
-## Submission Methods
+## API Request Format
 
-### Method A: Node.js Script (Recommended, Cross-Platform)
+POST to `{API_URL}/sessions` with header `Content-Type: application/json`:
 
-```bash
-node .claude/skills/session-share/scripts/submit.mjs
+```json
+{
+  "rawJsonl": "<complete jsonl content>",
+  "title": "Optional title",
+  "description": "Optional description",
+  "isPublic": true,
+  "encoding": "utf-8"
+}
 ```
 
-Options:
-```bash
-node .claude/skills/session-share/scripts/submit.mjs --title "My Session" --description "Description"
-node .claude/skills/session-share/scripts/submit.mjs --private
-```
+For large sessions (>500KB), the script auto-switches to base64 encoding:
 
-### Method B: Claude Reads and POSTs Directly
-
-Use Bash tool to run a Node.js one-liner that reads the JSONL and POSTs to the API. See `scripts/submit.mjs` for the implementation pattern.
-
-### Method C: Bash Script (Linux/Mac only)
-
-```bash
-bash .claude/skills/session-share/scripts/submit.sh
+```json
+{
+  "rawJsonl": "<base64-encoded content>",
+  "encoding": "base64"
+}
 ```
 
 ## Error Handling
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| No session found | No JSONL file in expected directory | Ensure Claude Code is running and has an active session |
-| API unreachable | Server down or wrong URL | Check `SESSION_SHARE_API_URL` and network connectivity |
-| 401 Unauthorized | Invalid or missing API key | Set `SESSION_SHARE_API_KEY` environment variable |
+| File not found | `--file` path doesn't exist | Check the file path |
+| No session found | No JSONL in `~/.claude/projects/` | Ensure Claude Code has an active session, or use `--file` |
+| API unreachable | Server down or wrong URL | Check `SESSION_SHARE_API_URL` and network |
+| 401 Unauthorized | Invalid or missing API key | Set `SESSION_SHARE_API_KEY` |
 | 400 Validation failed | Malformed JSONL content | Check that the JSONL file is valid |
 | 500 Server error | Platform issue | Retry later or check server logs |
-
-## Technical Notes
-
-- The session JSONL format follows Claude Code's internal message format
-- Each line is a JSON object with fields: type, uuid, parentUuid, message, timestamp, etc.
-- Subagent sessions are stored in `~/.claude/projects/<encoded-cwd>/subagents/<agent-name>/`
-- The evaluation uses LLM-as-a-Judge pattern with configurable providers
-- Member uploads (with API key) get 180-day retention vs 7-day for guest uploads
