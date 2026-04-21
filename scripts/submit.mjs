@@ -26,6 +26,10 @@ for (let i = 0; i < args.length; i++) {
     case '--file':
     case '-f':
       filePath = args[++i];
+      if (!filePath) {
+        console.error('Error: --file requires a path argument');
+        process.exit(1);
+      }
       break;
     case '--title': title = args[++i]; break;
     case '--description': description = args[++i]; break;

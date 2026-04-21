@@ -8,7 +8,7 @@
 import { readFileSync } from 'node:fs';
 
 /** @typedef {{ title?: string, description?: string, isPublic?: boolean, apiKey?: string, apiUrl?: string }} UploadOptions */
-/** @typedef {{ shareToken: string, shareUrl: string, storageTier: string, expiresAt?: string, evaluationAllowed?: boolean }} UploadResult */
+/** @typedef {{ shareToken: string, shareUrl: string, storageTier: string, expiresAt?: string, evaluationAllowed?: boolean, lineCount: number, encoding: string, contentSizeKB: number }} UploadResult */
 
 const BASE64_THRESHOLD = 500 * 1024; // 500KB
 
