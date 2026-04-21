@@ -5,7 +5,7 @@ A Claude Code skill for submitting conversation sessions to the [Session Share](
 ## Install
 
 ```bash
-npx skill add lukeaxu67/session-share
+npx skills add lukeaxu67/session-share
 ```
 
 ## Usage
