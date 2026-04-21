@@ -3,7 +3,7 @@
 # Linux/Mac only. For Windows, use submit.mjs (Node.js) instead.
 #
 # Usage:
-#   bash submit.sh [--title "Title"] [--description "Description"] [--private] [--key API_KEY]
+#   bash submit.sh [--file <path>] [--title "Title"] [--description "Description"] [--private] [--key API_KEY]
 #
 # Environment Variables:
 #   SESSION_SHARE_API_URL - Base URL for API (default: https://eval.569169.xyz/api)
@@ -20,9 +20,11 @@ TITLE=""
 DESCRIPTION=""
 IS_PUBLIC="true"
 EXTRA_KEY=""
+FILE_PATH=""
 
 while [[ $# -gt 0 ]]; do
   case $1 in
+    --file|-f) FILE_PATH="$2"; shift 2 ;;
     --title) TITLE="$2"; shift 2 ;;
     --description) DESCRIPTION="$2"; shift 2 ;;
     --private) IS_PUBLIC="false"; shift ;;
@@ -36,38 +38,52 @@ if [[ -n "$EXTRA_KEY" ]]; then
   API_KEY="$EXTRA_KEY"
 fi
 
-# Find Claude Code projects directory
-CLAUDE_DIR="$HOME/.claude/projects"
+# Determine session file path
+if [[ -n "$FILE_PATH" ]]; then
+  # Direct file path mode
+  if [[ ! -f "$FILE_PATH" ]]; then
+    echo "Error: File not found: $FILE_PATH"
+    exit 1
+  fi
+  SESSION_FILE="$FILE_PATH"
+  echo "Using specified file: $SESSION_FILE"
+else
+  # Auto-detect mode
+  CLAUDE_DIR="$HOME/.claude/projects"
 
-if [[ ! -d "$CLAUDE_DIR" ]]; then
-  echo "Error: Claude Code projects directory not found at $CLAUDE_DIR"
-  exit 1
-fi
+  if [[ ! -d "$CLAUDE_DIR" ]]; then
+    echo "Error: Claude Code projects directory not found at $CLAUDE_DIR"
+    echo "Use --file <path> to specify a session file directly."
+    exit 1
+  fi
 
-# Encode current working directory to find the session file
-ENCODED_CWD=$(echo "$PWD" | sed 's|/|-|g')
-SESSION_DIR="$CLAUDE_DIR/$ENCODED_CWD"
-
-# Fallback: try with colon encoding (older Claude Code versions)
-if [[ ! -d "$SESSION_DIR" ]]; then
-  ENCODED_CWD=$(echo "$PWD" | sed 's|/|:|g')
+  # Encode current working directory to find the session file
+  ENCODED_CWD=$(echo "$PWD" | sed 's|/|-|g')
   SESSION_DIR="$CLAUDE_DIR/$ENCODED_CWD"
-fi
 
-if [[ ! -d "$SESSION_DIR" ]]; then
-  echo "Error: Could not find session directory for current working directory"
-  echo "Searched for: $PWD"
-  echo "Available projects:"
-  ls -1 "$CLAUDE_DIR" 2>/dev/null | head -5
-  exit 1
-fi
+  # Fallback: try with colon encoding (older Claude Code versions)
+  if [[ ! -d "$SESSION_DIR" ]]; then
+    ENCODED_CWD=$(echo "$PWD" | sed 's|/|:|g')
+    SESSION_DIR="$CLAUDE_DIR/$ENCODED_CWD"
+  fi
 
-# Find the most recent .jsonl file
-SESSION_FILE=$(find "$SESSION_DIR" -maxdepth 1 -name "*.jsonl" -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+  if [[ ! -d "$SESSION_DIR" ]]; then
+    echo "Error: Could not find session directory for current working directory"
+    echo "Searched for: $PWD"
+    echo "Available projects:"
+    ls -1 "$CLAUDE_DIR" 2>/dev/null | head -5
+    echo "Use --file <path> to specify a session file directly."
+    exit 1
+  fi
 
-if [[ -z "$SESSION_FILE" ]]; then
-  echo "Error: No session file found in $SESSION_DIR"
-  exit 1
+  # Find the most recent .jsonl file
+  SESSION_FILE=$(find "$SESSION_DIR" -maxdepth 1 -name "*.jsonl" -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+
+  if [[ -z "$SESSION_FILE" ]]; then
+    echo "Error: No session file found in $SESSION_DIR"
+    echo "Use --file <path> to specify a session file directly."
+    exit 1
+  fi
 fi
 
 echo "Found session file: $SESSION_FILE"
