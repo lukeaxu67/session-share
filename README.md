@@ -80,6 +80,14 @@ Response (201):
 | `scripts/submit.mjs` | All (Node.js) | Cross-platform submit script (recommended) |
 | `scripts/submit.sh` | Linux/Mac | Bash submit script |
 
+## Changelog
+
+### 2026-04-23
+
+- **gzip+base64 编码**：上传脚本始终使用 gzip 压缩，绕过 Vercel 4.5MB body limit，支持最大 10MB 原始 JSONL
+- **改进错误处理**：非 JSON 响应（如 413 Payload Too Large）不再抛出解析错误，改为清晰的大小提示
+- **SKILL.md 更新**：新增 Size Limits 章节，更新 encoding 文档
+
 ## License
 
 MIT
