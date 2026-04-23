@@ -115,12 +115,20 @@ For large sessions (>500KB), the script auto-switches to base64 encoding:
 }
 ```
 
+## Size Limits
+
+- **Raw JSONL**: Up to ~4MB (platform limit, including base64 overhead)
+- Sessions exceeding this limit will receive a `413 Session too large` error
+- The script auto-encodes as base64 when raw content exceeds 500KB, but the final payload must still fit within ~4MB
+- For very long sessions, consider uploading only the relevant portion using `--file` with a trimmed JSONL
+
 ## Error Handling
 
 | Error | Cause | Solution |
 |-------|-------|----------|
 | File not found | `--file` path doesn't exist | Check the file path |
 | No session found | No JSONL in `~/.claude/projects/` | Ensure Claude Code has an active session, or use `--file` |
+| Session too large (413) | Payload exceeds platform limit (~4MB) | Use a shorter session or trim the JSONL |
 | API unreachable | Server down or wrong URL | Check `SESSION_SHARE_API_URL` and network |
 | 401 Unauthorized | Invalid or missing API key | Set `SESSION_SHARE_API_KEY` |
 | 400 Validation failed | Malformed JSONL content | Check that the JSONL file is valid |

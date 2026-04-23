@@ -68,7 +68,21 @@ export async function uploadSession(filePath, options = {}) {
     body: JSON.stringify(payload),
   });
 
-  const body = await response.json();
+  const responseText = await response.text();
+
+  let body;
+  try {
+    body = JSON.parse(responseText);
+  } catch {
+    // Non-JSON response (e.g. 413 from reverse proxy, HTML error page)
+    const err = new Error(
+      response.status === 413
+        ? `Session too large (${contentSizeKB}KB). The platform accepts sessions up to ~4MB raw JSONL. Try a shorter session.`
+        : `API returned non-JSON response (status ${response.status}): ${responseText.substring(0, 200)}`
+    );
+    err.status = response.status;
+    throw err;
+  }
 
   if (!response.ok) {
     const err = new Error(`API returned status ${response.status}`);
