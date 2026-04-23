@@ -106,21 +106,23 @@ POST to `{API_URL}/sessions` with header `Content-Type: application/json`:
 }
 ```
 
-For large sessions (>500KB), the script auto-switches to base64 encoding:
+For all sessions, the script uses gzip+base64 encoding to minimize payload:
 
 ```json
 {
-  "rawJsonl": "<base64-encoded content>",
-  "encoding": "base64"
+  "rawJsonl": "<gzip-compressed then base64-encoded content>",
+  "encoding": "gzip+base64"
 }
 ```
 
+Legacy encodings `utf-8` and `base64` are still accepted by the API.
+
 ## Size Limits
 
-- **Raw JSONL**: Up to ~4MB (platform limit, including base64 overhead)
-- Sessions exceeding this limit will receive a `413 Session too large` error
-- The script auto-encodes as base64 when raw content exceeds 500KB, but the final payload must still fit within ~4MB
-- For very long sessions, consider uploading only the relevant portion using `--file` with a trimmed JSONL
+- **Raw JSONL**: Up to 10MB after decompression
+- The script always uses gzip+base64 encoding to minimize payload size
+- Compressed payloads typically are 20-30% of the original size, so 10MB raw JSONL compresses to ~2-3MB
+- The platform enforces a 10MB limit on the raw (decompressed) JSONL content
 
 ## Error Handling
 

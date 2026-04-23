@@ -2,38 +2,39 @@
 // uploader.mjs - Encode and upload session JSONL to Session Share API
 //
 // Exports:
-//   buildPayload(content, options) - Build JSON payload with optional base64 encoding
+//   buildPayload(content, options) - Build JSON payload with gzip+base64 encoding
 //   uploadSession(filePath, options) - Read file, encode, POST to API, return result
 
 import { readFileSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
 
 /** @typedef {{ title?: string, description?: string, isPublic?: boolean, apiKey?: string, apiUrl?: string }} UploadOptions */
 /** @typedef {{ shareToken: string, shareUrl: string, storageTier: string, expiresAt?: string, evaluationAllowed?: boolean, lineCount: number, encoding: string, contentSizeKB: number }} UploadResult */
 
-const BASE64_THRESHOLD = 500 * 1024; // 500KB
-
 /**
  * Build the JSON payload for the upload API.
- * Automatically uses base64 encoding for content >500KB.
+ * Always uses gzip+base64 encoding to stay within Vercel's 4.5MB body limit.
  * @param {string} content - Raw JSONL content.
  * @param {Pick<UploadOptions, 'title' | 'description' | 'isPublic'>} options
  * @returns {{ payload: object, encoding: string, contentSizeKB: number }}
  */
 export function buildPayload(content, options = {}) {
-  const useBase64 = Buffer.byteLength(content) > BASE64_THRESHOLD;
-  const encoding = useBase64 ? 'base64' : 'utf-8';
-  const contentSizeKB = Math.round(Buffer.byteLength(content) / 1024);
+  const rawBytes = Buffer.from(content, 'utf-8');
+  const contentSizeKB = Math.round(rawBytes.length / 1024);
+
+  const gzipped = gzipSync(rawBytes);
+  const encoded = gzipped.toString('base64');
 
   const payload = {
-    rawJsonl: useBase64 ? Buffer.from(content, 'utf-8').toString('base64') : content,
-    encoding,
+    rawJsonl: encoded,
+    encoding: 'gzip+base64',
     isPublic: options.isPublic !== false,
   };
 
   if (options.title) payload.title = options.title;
   if (options.description) payload.description = options.description;
 
-  return { payload, encoding, contentSizeKB };
+  return { payload, encoding: 'gzip+base64', contentSizeKB };
 }
 
 /**
@@ -77,7 +78,7 @@ export async function uploadSession(filePath, options = {}) {
     // Non-JSON response (e.g. 413 from reverse proxy, HTML error page)
     const err = new Error(
       response.status === 413
-        ? `Session too large (${contentSizeKB}KB). The platform accepts sessions up to ~4MB raw JSONL. Try a shorter session.`
+        ? `Session too large (${contentSizeKB}KB raw, payload still exceeds limit after compression). Try a shorter session.`
         : `API returned non-JSON response (status ${response.status}): ${responseText.substring(0, 200)}`
     );
     err.status = response.status;
